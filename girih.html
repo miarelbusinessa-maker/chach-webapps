@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Хранители Чача — Построй гирих</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --cream:#efe6d5; --ink:#2a2118; --brick:#B5651D; --brick-d:#8a4e16;
+    --maj:#1f6f8b; --maj-d:#16566c; --gold:#c8a24a; --ok:#2e8b57; --bad:#b04a3a;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; background:#1c1814; color:var(--cream);
+    font-family:-apple-system,Segoe UI,Roboto,sans-serif; overflow-x:hidden;}
+  .wrap{max-width:520px; margin:0 auto; padding:16px 16px 28px;}
+  h1{font-size:17px; margin:2px 0 12px; color:#f0e6d3;}
+  .voice{background:rgba(31,111,139,.14); border-left:4px solid var(--maj);
+    border-radius:10px; padding:12px 14px; margin-bottom:12px;}
+  .voice .who{font-size:12px; font-weight:700; color:#6fc7e0; letter-spacing:.04em; margin-bottom:4px;}
+  .voice p{margin:0; font-size:15px; line-height:1.45; font-style:italic; color:#f3ead9;}
+  .stage{background:#241d16; border:1px solid #3a3026; border-radius:14px; padding:10px; margin-bottom:12px;}
+  svg{display:block; width:100%; height:auto; touch-action:manipulation;}
+  .tile-bg{fill:var(--cream);}
+  .guide{stroke:#d8cbb2; stroke-width:1.4; fill:none; stroke-dasharray:3 6;}
+  .edge{stroke:var(--maj); stroke-width:5; stroke-linecap:round; fill:none;}
+  .edge.gold{stroke:var(--gold);}
+  .starfill{fill:var(--maj); stroke:var(--gold); stroke-width:3; opacity:0; transition:opacity .9s;}
+  .starfill.show{opacity:.92;}
+  .center{fill:var(--brick); opacity:0; transition:opacity .9s .2s;}
+  .center.show{opacity:1;}
+  .hit{fill:transparent;}
+  .dot{fill:var(--brick-d); transition:r .15s, fill .15s;}
+  .node.cur .dot{fill:var(--brick); r:12;}
+  .node.tgt .ring{opacity:1;}
+  .ring{fill:none; stroke:var(--gold); stroke-width:3; opacity:0; transition:opacity .15s;}
+  .pulse{transform-box:fill-box; transform-origin:center; animation:pl 1.3s infinite;}
+  @keyframes pl{0%{opacity:.0}50%{opacity:.55}100%{opacity:0}}
+  .node.cur .pulse{stroke:var(--brick);} 
+  .node.shake{animation:sh .4s;}
+  @keyframes sh{0%,100%{transform:translate(0,0)}25%{transform:translate(-4px,0)}75%{transform:translate(4px,0)}}
+  .rule{font-size:13px; color:#d8c39a; text-align:center; min-height:18px; margin:6px 0 2px;}
+  .rule b{color:#e7b15a;}
+  .controls{display:flex; gap:10px; align-items:center; justify-content:space-between; margin-top:6px;}
+  .meter{font-size:13px; color:#c9b894;} .meter b{color:#e7b15a;}
+  .btn{appearance:none; border:none; border-radius:10px; padding:11px 14px; font-size:14px; font-weight:600;
+    background:#33291f; color:#e9dcc4; cursor:pointer;} .btn:disabled{opacity:.4;}
+  .progress{font-size:12px; color:#9a8c72;}
+  .result{margin-top:12px; border-radius:12px; padding:14px; display:none;}
+  .result.show{display:block;}
+  .result.ok{background:rgba(46,139,87,.15); border:1px solid var(--ok);}
+  .result .who{font-size:12px;font-weight:700;letter-spacing:.04em;margin-bottom:4px;color:#7fd3a3;}
+  .result p{margin:0 0 6px; font-size:15px; line-height:1.45; font-style:italic;}
+  .key{display:inline-block; margin-top:4px; background:var(--gold); color:#241d10; font-weight:700;
+    font-size:13px; padding:5px 10px; border-radius:8px;}
+  .toast{position:fixed; left:50%; bottom:18px; transform:translateX(-50%); background:#000; color:#fff;
+    font-size:12px; padding:8px 12px; border-radius:8px; opacity:0; transition:opacity .25s; max-width:90%; text-align:center;}
+  .toast.show{opacity:.92;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔨 Испытание Мастера · Абулкасым</h1>
+
+  <div class="voice">
+    <div class="who">АБУ БАКР</div>
+    <p>Мастера Чача не рисовали узор — они его строили. Из точек и линий, по правилу, как я строил замок. Я дам тебе узлы — соедини их, как велит ремесло, и из россыпи точек родится звезда.</p>
+  </div>
+
+  <div class="stage">
+    <svg id="board" viewBox="0 0 360 360" aria-label="сетка узлов гириха"></svg>
+    <div class="rule" id="rule">Коснись узла, который загорелся золотом.</div>
+    <div class="controls">
+      <div class="meter">Стирание: <b id="erosion">0%</b></div>
+      <div class="progress" id="prog">0 / 8 линий</div>
+      <button class="btn" id="showAns" disabled>Показать ответ</button>
+    </div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="who">АБУ БАКР</div>
+    <p id="resText"></p>
+    <span class="key" id="resKey"></span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const CX=180, CY=180, R=132, N=8;
+// узлы по кругу, 0 сверху, по часовой
+const nodes=[];
+for(let k=0;k<N;k++){
+  const a=(-90 + k*45)*Math.PI/180;
+  nodes.push({x:CX+R*Math.cos(a), y:CY+R*Math.sin(a)});
+}
+// путь октаграммы {8/3}: каждый третий узел, один штрих
+const PATH=[0,3,6,1,4,7,2,5,0];      // 9 точек = 8 рёбер
+const STEPS=PATH.length-1;           // 8
+
+let step=0, attempts=0, erosion=0, done=false, hintForce=false;
+const EROS=[10,15,20];
+
+const svg=document.getElementById('board');
+function P(p){return p.x.toFixed(1)+','+p.y.toFixed(1);}
+
+function buildBoard(){
+  let s='';
+  s+=`<rect class="tile-bg" x="4" y="4" width="352" height="352" rx="14"/>`;
+  // лёгкий направляющий восьмиугольник
+  let oct='';
+  for(let k=0;k<N;k++){oct+=(k===0?'M':'L')+P(nodes[k]);}
+  s+=`<path class="guide" d="${oct}Z"/>`;
+  s+=`<g id="edges"></g>`;
+  s+=`<path id="starfill" class="starfill" d=""/>`;
+  s+=`<circle id="centerDot" class="center" cx="${CX}" cy="${CY}" r="16"/>`;
+  s+=`<g id="nodes"></g>`;
+  svg.innerHTML=s;
+  const ng=document.getElementById('nodes');
+  nodes.forEach((p,i)=>{
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','node'); g.dataset.i=i;
+    g.innerHTML=`<circle class="pulse" cx="${p.x}" cy="${p.y}" r="20" fill="none" stroke-width="3" stroke="transparent"/>
+      <circle class="ring" cx="${p.x}" cy="${p.y}" r="18"/>
+      <circle class="dot" cx="${p.x}" cy="${p.y}" r="9"/>
+      <circle class="hit" cx="${p.x}" cy="${p.y}" r="28"/>`;
+    g.addEventListener('click',()=>tap(i));
+    ng.appendChild(g);
+  });
+  highlight();
+}
+
+function highlight(){
+  document.querySelectorAll('.node').forEach(g=>g.classList.remove('cur','tgt'));
+  if(done) return;
+  const cur=PATH[step], tgt=PATH[step+1];
+  const cg=document.querySelector('.node[data-i="'+cur+'"]'); if(cg) cg.classList.add('cur');
+  // подсказываем цель только первые 2 ребра ИЛИ если игрок ошибается
+  if(step<2 || hintForce){
+    const tg=document.querySelector('.node[data-i="'+tgt+'"]'); if(tg) tg.classList.add('tgt');
+  }
+  // правило открывается после двух ведомых рёбер
+  const rule=document.getElementById('rule');
+  if(step===2 && !hintForce){ rule.innerHTML='Правило мастера: <b>соединяй каждый третий узел</b>. Дальше — сам.'; }
+}
+
+function drawEdge(a,b,gold){
+  const eg=document.getElementById('edges');
+  const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+  ln.setAttribute('class','edge'+(gold?' gold':''));
+  ln.setAttribute('x1',nodes[a].x); ln.setAttribute('y1',nodes[a].y);
+  ln.setAttribute('x2',nodes[a].x); ln.setAttribute('y2',nodes[a].y);
+  eg.appendChild(ln);
+  // анимация прорисовки
+  requestAnimationFrame(()=>{ ln.style.transition='all .28s ease-out';
+    ln.setAttribute('x2',nodes[b].x); ln.setAttribute('y2',nodes[b].y); });
+  return ln;
+}
+
+function tap(n){
+  if(done) return;
+  const expected=PATH[step+1];
+  if(n===expected){
+    drawEdge(PATH[step], n, false);
+    step++;
+    document.getElementById('prog').textContent=step+' / '+STEPS+' линий';
+    hintForce=false;
+    if(step>=STEPS){ complete(false); } else { highlight(); }
+  } else {
+    attempts++;
+    erosion+=EROS[Math.min(attempts-1,2)];
+    document.getElementById('erosion').textContent=erosion+'%';
+    const g=document.querySelector('.node[data-i="'+n+'"]');
+    if(g){ g.classList.add('shake'); setTimeout(()=>g.classList.remove('shake'),420); }
+    if(attempts>=2){ hintForce=true; document.getElementById('showAns').disabled=false; }
+    toast(attempts===1 ? 'Не тот узел. Отсчитай: пропусти два, соедини третий.'
+                       : 'Смотри — золотом горит верный узел.');
+    highlight();
+  }
+}
+
+function finishStar(){
+  // заливка октаграммы тем же путём, evenodd → 8-конечная звезда с восьмиугольной серединой
+  let d='';
+  for(let t=0;t<PATH.length-1;t++){ d+=(t===0?'M':'L')+P(nodes[PATH[t]]); }
+  d+='Z';
+  const sf=document.getElementById('starfill');
+  sf.setAttribute('d',d); sf.setAttribute('fill-rule','evenodd');
+  document.querySelectorAll('.edge').forEach(e=>e.classList.add('gold'));
+  requestAnimationFrame(()=>{ sf.classList.add('show'); document.getElementById('centerDot').classList.add('show'); });
+  document.querySelectorAll('.node .dot').forEach(d=>d.style.fill='var(--gold)');
+  document.querySelectorAll('.node').forEach(g=>g.classList.remove('cur','tgt'));
+}
+
+function complete(viaReveal){
+  if(done) return; done=true;
+  finishStar();
+  document.getElementById('rule').innerHTML='Восьмиконечная звезда — сердце гириха.';
+  document.getElementById('prog').textContent=STEPS+' / '+STEPS+' линий';
+  const r=document.getElementById('result'), t=document.getElementById('resText'), k=document.getElementById('resKey');
+  r.className='result show ok';
+  if(!viaReveal){
+    t.textContent='Ты не нарисовал звезду — ты её построил, как строили шестьсот лет назад: из точек и одного правила. Теперь у любого портала ты будешь видеть не украшение, а чертёж.';
+    k.textContent='🔑 Ключ получен: Правило формы';
+  } else {
+    t.textContent='Вот она, целиком. Запомни правило, которое её держит: каждый третий узел. Узор — это не картинка, а закон. Теперь ты его знаешь.';
+    k.textContent='🔑 Ключ получен: Правило формы (со стиранием)';
+  }
+  setTimeout(()=>r.scrollIntoView({behavior:'smooth',block:'center'}),300);
+  sendResult(viaReveal);
+}
+
+document.getElementById('showAns').onclick=()=>{
+  if(done) return;
+  // достроить оставшиеся рёбра по очереди
+  let i=step;
+  (function next(){
+    if(i>=STEPS){ complete(true); return; }
+    drawEdge(PATH[i], PATH[i+1], true); i++; step=i;
+    document.getElementById('prog').textContent=step+' / '+STEPS+' линий';
+    setTimeout(next,180);
+  })();
+};
+
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1900);}
+
+function sendResult(viaReveal){
+  const payload={task:'master_build_girih', solved:true, via_reveal:viaReveal,
+                 attempts:attempts, erosion:erosion, key:'rule_of_form'};
+  const tg=window.Telegram&&window.Telegram.WebApp;
+  if(tg&&tg.sendData){ try{ tg.sendData(JSON.stringify(payload)); setTimeout(()=>tg.close(),900);}catch(e){ toast('Отправлено боту (эмуляция)'); } }
+  else { toast('Результат боту: '+JSON.stringify(payload)); console.log('sendData ->',payload); }
+}
+
+const tg=window.Telegram&&window.Telegram.WebApp; if(tg){tg.ready(); tg.expand();}
+buildBoard();
+document.getElementById('prog').textContent='0 / '+STEPS+' линий';
+</script>
+</body>
+</html>

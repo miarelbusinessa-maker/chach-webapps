@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Хранители Чача — Кукельдаш: восстанови изразец</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --brick:#B5651D; --brick-d:#8a4e16; --cream:#efe6d5; --ink:#2a2118;
+    --maj:#1f6f8b; --maj-d:#16566c; --gold:#c8a24a; --ok:#2e8b57; --bad:#b04a3a;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:#1c1814; color:var(--cream);
+    font-family:-apple-system,Segoe UI,Roboto,sans-serif; overflow-x:hidden;}
+  .wrap{max-width:520px; margin:0 auto; padding:16px 16px 28px;}
+  .voice{background:rgba(31,111,139,.14); border-left:4px solid var(--maj);
+    border-radius:10px; padding:12px 14px; margin-bottom:14px;}
+  .voice .who{font-size:12px; font-weight:700; color:#6fc7e0; letter-spacing:.04em; margin-bottom:4px;}
+  .voice p{margin:0; font-size:15px; line-height:1.45; font-style:italic; color:#f3ead9;}
+  .panel{background:#241d16; border:1px solid #3a3026; border-radius:14px; padding:14px; margin-bottom:14px;}
+  .label{font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:#b9a98e; margin-bottom:8px;}
+  .wall{width:100%; border-radius:10px; display:block; border:1px solid #3a3026;}
+  .bandwrap{position:relative;}
+  .axis-tip{font-size:11px;color:#9a8c72;text-align:center;margin-top:6px;}
+  svg{display:block; width:100%; height:auto;}
+  .tile-bg{fill:var(--cream);}
+  .star{fill:var(--maj);}
+  .star2{fill:var(--maj-d);}
+  .bud{fill:var(--brick);}
+  .buddot{fill:var(--gold);}
+  .gap rect.slot{fill:#170f08; stroke:var(--gold); stroke-width:2; stroke-dasharray:6 5;}
+  .gap.filledok rect.slot{stroke:var(--ok);}
+  .candidates{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:4px;}
+  .cand{background:var(--cream); border:2px solid #3a3026; border-radius:12px; padding:6px;
+    cursor:pointer; transition:transform .12s, border-color .12s, box-shadow .12s; touch-action:manipulation;}
+  .cand:active{transform:scale(.94);}
+  .cand.dim{opacity:.35; pointer-events:none;}
+  .cand.shake{animation:sh .4s;}
+  @keyframes sh{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+  .controls{display:flex; gap:10px; align-items:center; justify-content:space-between; margin-top:4px;}
+  .meter{font-size:13px; color:#c9b894;}
+  .meter b{color:#e7b15a;}
+  .btn{appearance:none; border:none; border-radius:10px; padding:11px 14px; font-size:14px; font-weight:600;
+    background:#33291f; color:#e9dcc4; cursor:pointer;}
+  .btn.gold{background:var(--gold); color:#241d10;}
+  .btn:disabled{opacity:.4;}
+  .result{margin-top:14px; border-radius:12px; padding:14px; display:none;}
+  .result.show{display:block;}
+  .result.ok{background:rgba(46,139,87,.15); border:1px solid var(--ok);}
+  .result.fail{background:rgba(176,74,58,.15); border:1px solid var(--bad);}
+  .result .who{font-size:12px;font-weight:700;letter-spacing:.04em;margin-bottom:4px;}
+  .result.ok .who{color:#7fd3a3;} .result.fail .who{color:#e09a8c;}
+  .result p{margin:0 0 6px; font-size:15px; line-height:1.45; font-style:italic;}
+  .key{display:inline-block; margin-top:6px; background:var(--gold); color:#241d10; font-weight:700;
+    font-size:13px; padding:5px 10px; border-radius:8px;}
+  .toast{position:fixed; left:50%; bottom:18px; transform:translateX(-50%); background:#000; color:#fff;
+    font-size:12px; padding:8px 12px; border-radius:8px; opacity:0; transition:opacity .25s; max-width:90%;}
+  .toast.show{opacity:.92;}
+  h1{font-size:17px; margin:2px 0 12px; color:#f0e6d3;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔨 Испытание Мастера · Кукельдаш</h1>
+
+  <div class="voice">
+    <div class="who">АБУ БАКР</div>
+    <p>Медресе — это знание, ставшее камнем. В Абулкасыме ты прочёл один узор. Здесь ты знаешь правило — а кто знает правило, тот может починить сломанное. Один изразец в портале выбит. Верни тот, что велит симметрия.</p>
+  </div>
+
+  <div class="panel">
+    <div class="label">Фасад Кукельдаша · реальная стена</div>
+    <img class="wall" src="kukeldash-madrasah.webp" alt="Фасад медресе Кукельдаш">
+    <div class="axis-tip">— на портале выбит один изразец; восстанови его по правилу симметрии —</div>
+  </div>
+
+  <div class="panel">
+    <div class="label">Лента портала · недостаёт одного фрагмента</div>
+    <div class="bandwrap">
+      <svg id="band" viewBox="0 0 720 150" aria-label="орнаментальная лента портала"></svg>
+    </div>
+    <div class="axis-tip">— ось симметрии портала проходит по центру —</div>
+  </div>
+
+  <div class="panel">
+    <div class="label">Какой фрагмент завершит узор?</div>
+    <div class="candidates" id="cands"></div>
+    <div class="controls">
+      <div class="meter">Стирание: <b id="erosion">0%</b></div>
+      <button class="btn" id="showAns" disabled>Показать ответ</button>
+    </div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="who" id="resWho"></div>
+    <p id="resText"></p>
+    <span class="key" id="resKey" style="display:none"></span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- мотив: 8-конечная звезда + «бутон», повёрнутый на угол часов ---------- */
+function starPath(cx,cy,R,r,points){
+  let p="", n=points*2;
+  for(let i=0;i<n;i++){
+    const ang=(Math.PI/points)*i - Math.PI/2;
+    const rad=(i%2===0)?R:r;
+    const x=cx+rad*Math.cos(ang), y=cy+rad*Math.sin(ang);
+    p+=(i===0?"M":"L")+x.toFixed(1)+","+y.toFixed(1);
+  }
+  return p+"Z";
+}
+// budClock: 12=верх, 1 o'clock=30°, 11=-30°, 7=210°, 5=150°
+function motifSVG(budClock, scale=1){
+  const cx=60, cy=60;
+  const star=`<path class="star" d="${starPath(cx,cy,40,17,8)}"/>`+
+             `<path class="star2" d="${starPath(cx,cy,22,9,8)}"/>`;
+  const ang = budClock*30; // в градусах от верха, по часовой
+  // бутон рисуем у верхней точки и поворачиваем вокруг центра
+  const bud = `<g transform="rotate(${ang} ${cx} ${cy})">
+      <ellipse class="bud" cx="${cx}" cy="${cy-46}" rx="9" ry="15"/>
+      <circle class="buddot" cx="${cx}" cy="${cy-52}" r="4"/>
+    </g>`;
+  return `<g transform="scale(${scale})">${star}${bud}</g>`;
+}
+function tile(inner){ // фон-плитка + мотив
+  return `<rect class="tile-bg" x="2" y="2" width="116" height="116" rx="10"/>${inner}`;
+}
+
+/* ---------- лента портала: 6 слотов, ось по центру, слот 2 пуст ---------- */
+// правило: правая половина — бутон на «1 час», левая — зеркально на «11 часов»
+// слоты: 1(11ч) 2(GAP=11ч) 3(11ч) | 4(1ч) 5(1ч) 6(1ч)
+const SLOT_W=120;
+const slots = [
+  {clock:-1}, {clock:'gap'}, {clock:-1},   // левая половина (11 часов = -1)
+  {clock:1},  {clock:1},     {clock:1}     // правая половина (1 час)
+];
+function renderBand(){
+  const svg=document.getElementById('band');
+  let parts=`<line x1="360" y1="6" x2="360" y2="144" stroke="#c8a24a" stroke-opacity=".45" stroke-dasharray="4 6"/>`;
+  slots.forEach((s,i)=>{
+    const x=i*SLOT_W;
+    if(s.clock==='gap'){
+      parts+=`<g class="gap" id="gapG" transform="translate(${x},15)">
+        <rect class="slot" x="2" y="2" width="116" height="116" rx="10"/>
+        <g id="gapFill"></g></g>`;
+    } else {
+      parts+=`<g transform="translate(${x},15)">${tile(motifSVG(s.clock))}</g>`;
+    }
+  });
+  svg.setAttribute('viewBox',`0 0 ${slots.length*SLOT_W} 150`);
+  svg.innerHTML=parts;
+}
+
+/* ---------- кандидаты: A зеркало(верно) B копия C поворот180 D другой ---------- */
+// верный для левого слота = зеркало правого партнёра (1 час) => 11 часов (-1)
+const CANDS=[
+  {id:'mirror', clock:-1, correct:true},   // зеркало — ВЕРНО
+  {id:'copy',   clock:1,  correct:false},  // копия партнёра (частая ошибка)
+  {id:'rot180', clock:5,  correct:false},  // поворот 180° (бутон вниз-вправо)
+  {id:'other',  clock:7,  correct:false}   // иной разворот
+];
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+let candOrder=shuffle([...CANDS]);
+
+function renderCands(){
+  const box=document.getElementById('cands'); box.innerHTML='';
+  candOrder.forEach(c=>{
+    const d=document.createElement('div');
+    d.className='cand'; d.dataset.id=c.id;
+    d.innerHTML=`<svg viewBox="0 0 120 120">${tile(motifSVG(c.clock,1))}</svg>`;
+    d.onclick=()=>pick(c,d);
+    box.appendChild(d);
+  });
+}
+
+/* ---------- логика ---------- */
+let swaps=0, erosion=0, done=false;
+const EROS=[10,15,20];
+function setEros(){document.getElementById('erosion').textContent=erosion+'%';}
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800);}
+
+function fillGap(clock, ok){
+  const g=document.getElementById('gapFill');
+  g.innerHTML=motifSVG(clock,1);
+  document.getElementById('gapG').classList.toggle('filledok', !!ok);
+}
+
+function pick(c, el){
+  if(done) return;
+  if(c.correct){
+    done=true;
+    fillGap(c.clock,true);
+    document.querySelectorAll('.cand').forEach(x=>{if(x!==el)x.classList.add('dim');});
+    success(false);
+  } else {
+    swaps++;
+    erosion += EROS[Math.min(swaps-1,2)];
+    setEros();
+    el.classList.add('shake'); setTimeout(()=>el.classList.remove('shake'),420);
+    el.classList.add('dim');
+    if(swaps>=2) document.getElementById('showAns').disabled=false;
+    if(swaps===1) toast('Мимо. Это копия, а не отражение. Симметрия — это зеркало.');
+    else if(swaps===2) toast('Снова нет. Посмотри на правый край ленты и переверни его в зеркале.');
+    if(swaps>=3){ revealAnswer(); }
+  }
+}
+
+function revealAnswer(){
+  if(done) return; done=true;
+  const correct=CANDS.find(c=>c.correct);
+  fillGap(correct.clock,true);
+  document.querySelectorAll('.cand').forEach(x=>{
+    x.classList.add('dim');
+    if(x.dataset.id==='mirror'){x.classList.remove('dim'); x.style.borderColor='var(--ok)';}
+  });
+  success(true);
+}
+document.getElementById('showAns').onclick=revealAnswer;
+
+function success(viaReveal){
+  const r=document.getElementById('result');
+  const who=document.getElementById('resWho');
+  const txt=document.getElementById('resText');
+  const key=document.getElementById('resKey');
+  if(!viaReveal){
+    r.className='result show ok'; who.textContent='АБУ БАКР';
+    txt.textContent='Ты вернул то, чего не хватало. Так знание и переживает своего создателя — не в одной книге, а в правиле, которое можно повторить и восстановить. Ты прочёл не камень, а закон.';
+    key.style.display='inline-block'; key.textContent='🔑 Ключ получен: Правило формы';
+  } else {
+    r.className='result show fail'; who.textContent='АБУ БАКР';
+    txt.textContent='Вот он. Не вини себя — отражение легко спутать с повтором, и в этом вся разница. Теперь ты увидел её. Запомни: чинить можно лишь то, чьё правило понял.';
+    key.style.display='inline-block'; key.textContent='🔑 Ключ получен: Правило формы (со стиранием)';
+  }
+  r.scrollIntoView({behavior:'smooth', block:'center'});
+  sendResult(viaReveal);
+}
+
+/* ---------- возврат результата боту ---------- */
+function sendResult(viaReveal){
+  const payload={ task:'master_restore_kukeldash', solved:true, via_reveal:viaReveal,
+                  swaps:swaps, erosion:erosion, key:'rule_of_form' };
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if(tg && tg.sendData){
+    try{ tg.sendData(JSON.stringify(payload)); setTimeout(()=>tg.close(), 900); }
+    catch(e){ toast('Отправлено боту (эмуляция)'); }
+  } else {
+    toast('Результат боту: '+JSON.stringify(payload));
+    console.log('sendData ->', payload);
+  }
+}
+
+/* init */
+const tg=window.Telegram&&window.Telegram.WebApp; if(tg){tg.ready(); tg.expand();}
+renderBand(); renderCands(); setEros();
+</script>
+</body>
+</html>
