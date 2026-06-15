@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Хранители Чача — Дуэль внимания</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{--cream:#efe6d5;--ink:#2a2118;--brick:#B5651D;--brick-d:#8a4e16;
+        --maj:#1f6f8b;--maj-d:#16566c;--gold:#c8a24a;--ok:#2e8b57;--bad:#b04a3a;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;background:#1c1814;color:var(--cream);
+    font-family:-apple-system,Segoe UI,Roboto,sans-serif;overflow-x:hidden;}
+  .wrap{max-width:520px;margin:0 auto;padding:16px 16px 28px;}
+  h1{font-size:17px;margin:2px 0 12px;color:#f0e6d3;}
+  .voice{background:rgba(31,111,139,.14);border-left:4px solid var(--maj);
+    border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .voice .who{font-size:12px;font-weight:700;color:#6fc7e0;letter-spacing:.04em;margin-bottom:4px;}
+  .voice p{margin:0;font-size:15px;line-height:1.45;font-style:italic;color:#f3ead9;}
+  .panel{background:#241d16;border:1px solid #3a3026;border-radius:14px;padding:12px;margin-bottom:14px;}
+  .rule{font-size:13px;color:#d8c39a;text-align:center;min-height:18px;margin:2px 0 12px;}
+  .rule b{color:#e7b15a;}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;}
+  .tile{background:var(--cream);border:2px solid #3a3026;border-radius:10px;padding:3px;
+    cursor:pointer;transition:transform .1s,border-color .15s;touch-action:manipulation;}
+  .tile:active{transform:scale(.94);}
+  .tile.miss{animation:sh .35s;border-color:var(--bad);}
+  .tile.found{border-color:var(--ok);box-shadow:0 0 0 3px rgba(46,139,87,.5);}
+  .tile.hintring{border-color:var(--gold);box-shadow:0 0 0 3px rgba(200,162,74,.6);}
+  @keyframes sh{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+  .tile svg{display:block;width:100%;height:auto;}
+  .controls{display:flex;justify-content:space-between;align-items:center;margin-top:12px;}
+  .meter{font-size:13px;color:#c9b894;} .meter b{color:#e7b15a;}
+  .btn{appearance:none;border:none;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600;
+    background:#33291f;color:#e9dcc4;cursor:pointer;} .btn:disabled{opacity:.4;}
+  .result{margin-top:14px;border-radius:12px;padding:14px;display:none;}
+  .result.show{display:block;}
+  .result.ok{background:rgba(46,139,87,.15);border:1px solid var(--ok);}
+  .result .who{font-size:12px;font-weight:700;letter-spacing:.04em;margin-bottom:4px;color:#7fd3a3;}
+  .result p{margin:0 0 6px;font-size:15px;line-height:1.45;font-style:italic;}
+  .key{display:inline-block;margin-top:4px;background:var(--gold);color:#241d10;font-weight:700;
+    font-size:13px;padding:5px 10px;border-radius:8px;}
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#000;color:#fff;
+    font-size:12px;padding:8px 12px;border-radius:8px;opacity:0;transition:opacity .25s;max-width:90%;text-align:center;}
+  .toast.show{opacity:.92;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⚔️ Дуэль внимания · Чорсу</h1>
+  <div class="voice">
+    <div class="who">АБУ БАКР</div>
+    <p>На этой стене сотня изразцов, и все как один. Но мастер оставил знак: один — не такой. Перевёрнут, помечен или пуст в сердцевине. Базар спешит мимо. Кто увидит первым — у того сегодня самый зоркий глаз. Не беги. Смотри.</p>
+  </div>
+
+  <div class="panel">
+    <div class="grid" id="grid"></div>
+    <div class="rule" id="rule">Найди единственный изразец, что отличается от остальных.</div>
+    <div class="controls">
+      <div class="meter">Стирание: <b id="erosion">0%</b></div>
+      <button class="btn" id="showAns" disabled>Показать ответ</button>
+    </div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="who">АБУ БАКР</div>
+    <p id="resText"></p>
+    <span class="key" id="resKey"></span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- мотив изразца: 8-конечная звезда + «бутон» ---------- */
+function starPath(cx,cy,R,r,pts){
+  let p="", n=pts*2;
+  for(let i=0;i<n;i++){
+    const ang=(Math.PI/pts)*i - Math.PI/2, rad=(i%2===0)?R:r;
+    p+=(i===0?"M":"L")+(cx+rad*Math.cos(ang)).toFixed(1)+","+(cy+rad*Math.sin(ang)).toFixed(1);
+  }
+  return p+"Z";
+}
+// kind: 'normal' | 'invert' (бутон вниз) | 'mark' (клеймо в углу) | 'nocenter' (нет сердцевины)
+function tileSVG(kind){
+  const cx=50, cy=50;
+  const star=`<path fill="#1f6f8b" d="${starPath(cx,cy,32,14,8)}"/>`;
+  const star2 = kind==='nocenter' ? '' : `<path fill="#16566c" d="${starPath(cx,cy,18,8,8)}"/>`;
+  const center = kind==='nocenter' ? '' : `<circle cx="${cx}" cy="${cy}" r="5" fill="#B5651D"/>`;
+  const ang = (kind==='invert') ? 180 : 0;       // бутон: вверх / вниз
+  const bud = `<g transform="rotate(${ang} ${cx} ${cy})">
+      <ellipse cx="${cx}" cy="${cy-38}" rx="7" ry="12" fill="#B5651D"/>
+      <circle cx="${cx}" cy="${cy-43}" r="3" fill="#c8a24a"/></g>`;
+  const mark = kind==='mark' ? `<rect x="9" y="9" width="11" height="11" rx="2" fill="#c8a24a"/>` : '';
+  return `<svg viewBox="0 0 100 100"><rect x="2" y="2" width="96" height="96" rx="8" fill="#efe6d5"/>${star}${star2}${bud}${center}${mark}</svg>`;
+}
+
+const N=16;
+const ODD_KINDS=['invert','mark','nocenter'];
+let oddIndex = Math.floor(Math.random()*N);
+let oddKind  = ODD_KINDS[Math.floor(Math.random()*ODD_KINDS.length)];
+
+let attempts=0, erosion=0, done=false;
+const EROS=[10,15,20];
+const $=id=>document.getElementById(id);
+function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1900);}
+function setEros(){$('erosion').textContent=erosion+'%';}
+
+function build(){
+  const g=$('grid'); g.innerHTML='';
+  for(let i=0;i<N;i++){
+    const d=document.createElement('div');
+    d.className='tile'; d.dataset.i=i;
+    d.innerHTML = tileSVG(i===oddIndex ? oddKind : 'normal');
+    d.onclick=()=>tap(i,d);
+    g.appendChild(d);
+  }
+}
+
+function tap(i, el){
+  if(done) return;
+  if(i===oddIndex){ done=true; el.classList.add('found'); win(false); return; }
+  attempts++; erosion+=EROS[Math.min(attempts-1,2)]; setEros();
+  el.classList.add('miss'); setTimeout(()=>el.classList.remove('miss'),360);
+  if(attempts>=2) $('showAns').disabled=false;
+  toast(attempts===1 ? 'Не этот. Все одинаковы — ищи тот, что выбивается.'
+                     : 'Смотри на бутон сверху, на сердцевину, на углы. Один — не такой.');
+}
+
+function revealOdd(){
+  const el=document.querySelector('.tile[data-i="'+oddIndex+'"]');
+  if(el) el.classList.add('hintring');
+}
+
+function win(viaReveal){
+  if(viaReveal){ done=true; revealOdd(); }
+  const hint = {invert:'перевёрнут', mark:'помечен клеймом мастера', nocenter:'пуст в сердцевине'}[oddKind];
+  $('rule').innerHTML='Вот он — <b>'+hint+'</b>. Один на сотню.';
+  const r=$('result'); r.className='result show ok';
+  $('resText').textContent = viaReveal
+    ? 'Вот он, отмеченный. В другой раз не торопись отвести взгляд — зоркость не в скорости, а в том, чтобы остановиться там, где спешат все.'
+    : 'Ты увидел. Сотня глаз скользнула мимо, а твой — остановился. Зоркость не в скорости — в внимании. Сегодня оно при тебе.';
+  $('resKey').textContent = viaReveal ? '⚡ Заряд внимания (со стиранием)' : '⚡ +Заряд внимания: зоркий глаз';
+  setTimeout(()=>r.scrollIntoView({behavior:'smooth',block:'center'}),250);
+  sendResult(viaReveal);
+}
+$('showAns').onclick=()=>{ if(!done) win(true); };
+
+function sendResult(viaReveal){
+  const payload={app:'duel', solved:true, via_reveal:viaReveal, hints:attempts,
+                 task:'attention_duel', found:oddKind, erosion:erosion, key:'sharp_eye'};
+  const tg=window.Telegram&&window.Telegram.WebApp;
+  if(tg&&tg.sendData){ try{ tg.sendData(JSON.stringify(payload)); setTimeout(()=>tg.close(),900);}catch(e){ toast('Отправлено боту (эмуляция)'); } }
+  else { toast('Результат боту: '+JSON.stringify(payload)); console.log('sendData ->',payload); }
+}
+
+const tg=window.Telegram&&window.Telegram.WebApp; if(tg){tg.ready(); tg.expand();}
+build(); setEros();
+</script>
+</body>
+</html>
