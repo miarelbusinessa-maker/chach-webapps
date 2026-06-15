@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Хранители Чача — Счёт купца</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{--cream:#efe6d5;--ink:#2a2118;--brick:#B5651D;--brick-d:#8a4e16;
+        --maj:#1f6f8b;--gold:#c8a24a;--ok:#2e8b57;--bad:#b04a3a;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;background:#1c1814;color:var(--cream);
+    font-family:-apple-system,Segoe UI,Roboto,sans-serif;overflow-x:hidden;}
+  .wrap{max-width:520px;margin:0 auto;padding:16px 16px 28px;}
+  h1{font-size:17px;margin:2px 0 12px;color:#f0e6d3;}
+  .voice{background:rgba(31,111,139,.14);border-left:4px solid var(--maj);
+    border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .voice .who{font-size:12px;font-weight:700;color:#6fc7e0;letter-spacing:.04em;margin-bottom:4px;}
+  .voice p{margin:0;font-size:15px;line-height:1.45;font-style:italic;color:#f3ead9;}
+  .panel{background:#241d16;border:1px solid #3a3026;border-radius:14px;padding:14px;margin-bottom:14px;}
+  .label{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#b9a98e;margin-bottom:10px;}
+  .rule{font-size:13px;color:#d8c39a;text-align:center;min-height:18px;margin:2px 0 12px;}
+  .rule b{color:#e7b15a;}
+  .cards{display:flex;flex-direction:column;gap:10px;}
+  .card{display:flex;align-items:center;gap:12px;background:var(--cream);color:var(--ink);
+    border:2px solid #3a3026;border-radius:12px;padding:12px 14px;cursor:pointer;
+    transition:transform .12s,border-color .12s,opacity .2s;touch-action:manipulation;}
+  .card:active{transform:scale(.97);}
+  .card .ic{font-size:26px;line-height:1;}
+  .card .t{font-weight:700;font-size:15px;}
+  .card .s{font-size:12.5px;color:#5b4f3f;margin-top:2px;}
+  .card.done{opacity:.45;pointer-events:none;border-color:var(--ok);}
+  .card.shake{animation:sh .4s;}
+  @keyframes sh{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(5px)}80%{transform:translateX(-3px)}}
+  .scale{display:flex;flex-direction:column;gap:8px;margin-bottom:6px;min-height:8px;}
+  .row{display:flex;justify-content:space-between;align-items:center;background:#170f08;
+    border:1px solid #3a3026;border-radius:10px;padding:8px 12px;animation:pop .3s;}
+  @keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  .row .n{font-size:14px;color:#f3ead9;}
+  .price{font-weight:700;font-size:13px;padding:4px 9px;border-radius:7px;}
+  .price.cheap{background:#3a3026;color:#c9b894;}
+  .price.fair{background:var(--maj);color:#fff;}
+  .price.priceless{background:var(--gold);color:#241d10;}
+  .controls{display:flex;justify-content:space-between;align-items:center;margin-top:4px;}
+  .meter{font-size:13px;color:#c9b894;} .meter b{color:#e7b15a;}
+  .btn{appearance:none;border:none;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600;
+    background:#33291f;color:#e9dcc4;cursor:pointer;} .btn:disabled{opacity:.4;}
+  .result{margin-top:14px;border-radius:12px;padding:14px;display:none;}
+  .result.show{display:block;}
+  .result.ok{background:rgba(46,139,87,.15);border:1px solid var(--ok);}
+  .result .who{font-size:12px;font-weight:700;letter-spacing:.04em;margin-bottom:4px;color:#7fd3a3;}
+  .result p{margin:0 0 6px;font-size:15px;line-height:1.45;font-style:italic;}
+  .key{display:inline-block;margin-top:4px;background:var(--gold);color:#241d10;font-weight:700;
+    font-size:13px;padding:5px 10px;border-radius:8px;}
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#000;color:#fff;
+    font-size:12px;padding:8px 12px;border-radius:8px;opacity:0;transition:opacity .25s;max-width:90%;text-align:center;}
+  .toast.show{opacity:.92;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⚖️ Испытание Купца · Абулкасым</h1>
+  <div class="voice">
+    <div class="who">АБУ БАКР</div>
+    <p>Мастер во дворе чеканит поднос. Турист бросит: «безделушка». А купец видит цену. Сложи её честно — от самого дешёвого к тому, чему цены нет. Так узнаешь, чем по-настоящему торгует Чач.</p>
+  </div>
+
+  <div class="panel">
+    <div class="scale" id="scale"></div>
+    <div class="rule" id="rule">Коснись по очереди: от самого дешёвого — к бесценному.</div>
+    <div class="label">Из чего цена подноса</div>
+    <div class="cards" id="cards"></div>
+    <div class="controls">
+      <div class="meter">Стирание: <b id="erosion">0%</b></div>
+      <button class="btn" id="showAns" disabled>Показать ответ</button>
+    </div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="who">АБУ БАКР</div>
+    <p id="resText"></p>
+    <span class="key" id="resKey"></span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// верный порядок: дешёвое → бесценное
+const ITEMS=[
+  {id:'mat',  ic:'🪨', t:'Глина и медь',        s:'материал — купить может каждый',  price:'гроши',     cls:'cheap'},
+  {id:'work', ic:'🔨', t:'Два месяца работы',    s:'время рук мастера',               price:'справедливо',cls:'fair'},
+  {id:'skill',ic:'🕰️', t:'Двадцать лет ремесла', s:'этому не научить за месяц',       price:'бесценно',  cls:'priceless'},
+];
+const ORDER=['mat','work','skill'];
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+let step=0, attempts=0, erosion=0, done=false;
+const EROS=[10,15,20];
+const $=id=>document.getElementById(id);
+function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1900);}
+function setEros(){$('erosion').textContent=erosion+'%';}
+
+function render(){
+  const box=$('cards'); box.innerHTML='';
+  shuffle([...ITEMS]).forEach(it=>{
+    const d=document.createElement('div');
+    d.className='card'; d.dataset.id=it.id;
+    d.innerHTML=`<div class="ic">${it.ic}</div><div><div class="t">${it.t}</div><div class="s">${it.s}</div></div>`;
+    d.onclick=()=>pick(it,d);
+    box.appendChild(d);
+  });
+}
+function placeRow(it){
+  const r=document.createElement('div'); r.className='row';
+  r.innerHTML=`<span class="n">${it.ic} ${it.t}</span><span class="price ${it.cls}">${it.price}</span>`;
+  $('scale').appendChild(r);
+}
+function markDone(id){const c=document.querySelector('.card[data-id="'+id+'"]'); if(c)c.classList.add('done');}
+
+function pick(it, el){
+  if(done) return;
+  if(it.id===ORDER[step]){
+    placeRow(it); markDone(it.id); step++;
+    if(step===1) $('rule').innerHTML='Дальше — то, что дороже материала: <b>время рук</b>.';
+    if(step===2) $('rule').innerHTML='И вершина — <b>то, чего нет на прилавке</b>.';
+    if(step>=ORDER.length) complete(false);
+  } else {
+    attempts++; erosion+=EROS[Math.min(attempts-1,2)]; setEros();
+    el.classList.add('shake'); setTimeout(()=>el.classList.remove('shake'),420);
+    if(attempts>=2) $('showAns').disabled=false;
+    toast(attempts===1 ? 'Дороже? Сначала самое дешёвое — то, что можно купить на базаре.'
+                       : 'Глина — гроши. Время — больше. Мастерство — бесценно.');
+  }
+}
+
+function complete(viaReveal){
+  if(done) return; done=true;
+  // достроить оставшиеся в правильном порядке
+  for(let i=step;i<ORDER.length;i++){ const it=ITEMS.find(x=>x.id===ORDER[i]); placeRow(it); markDone(it.id); }
+  document.querySelectorAll('.card').forEach(c=>c.classList.add('done'));
+  $('rule').innerHTML='Цена пути: <b>гроши + время + двадцать лет</b>.';
+  const r=$('result');
+  r.className='result show ok';
+  $('resText').textContent = viaReveal
+    ? 'Смотри: глина — гроши, работа — справедливо, а мастерство — бесценно. Турист платит за медь. Купец платит за двадцать лет. Вот товар, которого нет ни на одном прилавке.'
+    : 'Верно. Глина — гроши, работа — справедливо, мастерство — бесценно. Ты заплатил вниманием и увидел то, чего не видит турист: главный товар Чача не лежит на прилавке.';
+  $('resKey').textContent = viaReveal ? '🔑 Ключ получен: Цена пути (со стиранием)' : '🔑 Ключ получен: Цена пути';
+  setTimeout(()=>r.scrollIntoView({behavior:'smooth',block:'center'}),250);
+  sendResult(viaReveal);
+}
+$('showAns').onclick=()=>complete(true);
+
+function sendResult(viaReveal){
+  const payload={app:'schet', solved:true, via_reveal:viaReveal, hints:attempts,
+                 task:'merchant_fair_price', erosion:erosion, key:'price_of_path'};
+  const tg=window.Telegram&&window.Telegram.WebApp;
+  if(tg&&tg.sendData){ try{ tg.sendData(JSON.stringify(payload)); setTimeout(()=>tg.close(),900);}catch(e){ toast('Отправлено боту (эмуляция)'); } }
+  else { toast('Результат боту: '+JSON.stringify(payload)); console.log('sendData ->',payload); }
+}
+
+const tg=window.Telegram&&window.Telegram.WebApp; if(tg){tg.ready(); tg.expand();}
+render(); setEros();
+</script>
+</body>
+</html>

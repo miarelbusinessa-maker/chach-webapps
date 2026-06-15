@@ -224,8 +224,8 @@ document.getElementById('showAns').onclick=()=>{
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1900);}
 
 function sendResult(viaReveal){
-  const payload={task:'master_build_girih', solved:true, via_reveal:viaReveal,
-                 attempts:attempts, erosion:erosion, key:'rule_of_form'};
+  const payload={app:'girih', solved:true, via_reveal:viaReveal, hints:attempts,
+                 task:'master_build_girih', attempts:attempts, erosion:erosion, key:'rule_of_form'};
   const tg=window.Telegram&&window.Telegram.WebApp;
   if(tg&&tg.sendData){ try{ tg.sendData(JSON.stringify(payload)); setTimeout(()=>tg.close(),900);}catch(e){ toast('Отправлено боту (эмуляция)'); } }
   else { toast('Результат боту: '+JSON.stringify(payload)); console.log('sendData ->',payload); }

@@ -240,8 +240,8 @@ function success(viaReveal){
 
 /* ---------- возврат результата боту ---------- */
 function sendResult(viaReveal){
-  const payload={ task:'master_restore_kukeldash', solved:true, via_reveal:viaReveal,
-                  swaps:swaps, erosion:erosion, key:'rule_of_form' };
+  const payload={ app:'portal', solved:true, via_reveal:viaReveal, hints:swaps,
+                  task:'master_restore_kukeldash', swaps:swaps, erosion:erosion, key:'rule_of_form' };
   const tg = window.Telegram && window.Telegram.WebApp;
   if(tg && tg.sendData){
     try{ tg.sendData(JSON.stringify(payload)); setTimeout(()=>tg.close(), 900); }

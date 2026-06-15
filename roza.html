@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Хранители Чача — Роза дорог</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{--cream:#efe6d5;--ink:#2a2118;--brick:#B5651D;--maj:#1f6f8b;--gold:#c8a24a;--ok:#2e8b57;--bad:#b04a3a;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;background:#1c1814;color:var(--cream);
+    font-family:-apple-system,Segoe UI,Roboto,sans-serif;overflow-x:hidden;}
+  .wrap{max-width:520px;margin:0 auto;padding:16px 16px 28px;}
+  h1{font-size:17px;margin:2px 0 12px;color:#f0e6d3;}
+  .voice{background:rgba(31,111,139,.14);border-left:4px solid var(--maj);
+    border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .voice .who{font-size:12px;font-weight:700;color:#6fc7e0;letter-spacing:.04em;margin-bottom:4px;}
+  .voice p{margin:0;font-size:15px;line-height:1.45;font-style:italic;color:#f3ead9;}
+  .panel{background:#241d16;border:1px solid #3a3026;border-radius:14px;padding:14px;margin-bottom:14px;}
+  .rule{font-size:13px;color:#d8c39a;text-align:center;min-height:18px;margin:8px 0 2px;}
+  .rule b{color:#e7b15a;}
+  svg{display:block;width:100%;height:auto;touch-action:manipulation;}
+  .wedge{fill:#2c241b;stroke:#1c1814;stroke-width:2;transition:fill .15s;cursor:pointer;}
+  .wedge:hover{fill:#3a3026;}
+  .wedge.north{fill:rgba(31,111,139,.30);}
+  .wedge.ok{fill:var(--gold);}
+  .wedge.shake{animation:sh .4s;}
+  @keyframes sh{0%,100%{transform:translate(0,0)}25%{transform:translate(-3px,0)}75%{transform:translate(3px,0)}}
+  .card-lbl{font-size:15px;font-weight:700;fill:#d8c39a;}
+  .sun{font-size:22px;}
+  .qibla{stroke:var(--gold);stroke-width:5;stroke-linecap:round;opacity:0;transition:opacity .6s;}
+  .qibla.show{opacity:1;}
+  .controls{display:flex;justify-content:space-between;align-items:center;margin-top:8px;}
+  .meter{font-size:13px;color:#c9b894;} .meter b{color:#e7b15a;}
+  .btn{appearance:none;border:none;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600;
+    background:#33291f;color:#e9dcc4;cursor:pointer;} .btn:disabled{opacity:.4;}
+  .result{margin-top:14px;border-radius:12px;padding:14px;display:none;}
+  .result.show{display:block;}
+  .result.ok{background:rgba(46,139,87,.15);border:1px solid var(--ok);}
+  .result .who{font-size:12px;font-weight:700;letter-spacing:.04em;margin-bottom:4px;color:#7fd3a3;}
+  .result p{margin:0 0 6px;font-size:15px;line-height:1.45;font-style:italic;}
+  .key{display:inline-block;margin-top:4px;background:var(--gold);color:#241d10;font-weight:700;
+    font-size:13px;padding:5px 10px;border-radius:8px;}
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#000;color:#fff;
+    font-size:12px;padding:8px 12px;border-radius:8px;opacity:0;transition:opacity .25s;max-width:90%;text-align:center;}
+  .toast.show{opacity:.92;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🌿 Испытание Странника · Абулкасым</h1>
+  <div class="voice">
+    <div class="who">АБУ БАКР</div>
+    <p>Странник не спрашивает дорогу — он читает её. Михраб медресе глядит на Мекку, и так молящийся всегда знает, где он. Полуденная тень укажет тебе север. Найди по нему Мекку — она к юго-западу от Чача — и коснись той стороны.</p>
+  </div>
+
+  <div class="panel">
+    <svg id="rose" viewBox="0 0 300 300" aria-label="роза дорог"></svg>
+    <div class="rule" id="rule">Север отмечен полуденной тенью. <b>Мекка — на юго-запад.</b> Коснись той стороны.</div>
+    <div class="controls">
+      <div class="meter">Стирание: <b id="erosion">0%</b></div>
+      <button class="btn" id="showAns" disabled>Показать ответ</button>
+    </div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="who">АБУ БАКР</div>
+    <p id="resText"></p>
+    <span class="key" id="resKey"></span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const CX=150, CY=150, R=130, r0=40;
+// углы SVG: 0=восток, 90=низ(Юг), -90=верх(Север)
+const DIRS=[
+  {id:'N', a:-90, label:'С', north:true},
+  {id:'NE',a:-45},
+  {id:'E', a:0,   label:'В'},
+  {id:'SE',a:45},
+  {id:'S', a:90,  label:'Ю'},
+  {id:'SW',a:135, correct:true},
+  {id:'W', a:180, label:'З'},
+  {id:'NW',a:225},
+];
+const $=id=>document.getElementById(id);
+const pol=(a,r)=>[CX+r*Math.cos(a*Math.PI/180), CY+r*Math.sin(a*Math.PI/180)];
+function wedgePath(a){
+  const a1=a-22.5, a2=a+22.5;
+  const [x1,y1]=pol(a1,R),[x2,y2]=pol(a2,R),[ix1,iy1]=pol(a1,r0),[ix2,iy2]=pol(a2,r0);
+  const f=n=>n.toFixed(1);
+  return `M${f(ix1)},${f(iy1)} L${f(x1)},${f(y1)} A${R},${R} 0 0 1 ${f(x2)},${f(y2)} `
+       + `L${f(ix2)},${f(iy2)} A${r0},${r0} 0 0 0 ${f(ix1)},${f(iy1)} Z`;
+}
+let attempts=0, erosion=0, done=false;
+const EROS=[10,15,20];
+function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1900);}
+function setEros(){$('erosion').textContent=erosion+'%';}
+
+function build(){
+  const svg=$('rose'); let s='';
+  DIRS.forEach(d=>{
+    s+=`<path class="wedge${d.north?' north':''}" data-id="${d.id}" d="${wedgePath(d.a)}"/>`;
+  });
+  // подписи сторон света
+  DIRS.filter(d=>d.label).forEach(d=>{
+    const [lx,ly]=pol(d.a,(R+r0)/2);
+    s+=`<text class="card-lbl" x="${lx.toFixed(1)}" y="${(ly+5).toFixed(1)}" text-anchor="middle">${d.label}</text>`;
+  });
+  // центр + стрелка севера (полуденная тень) + солнце на юге
+  s+=`<circle cx="${CX}" cy="${CY}" r="${r0}" fill="#1c1814" stroke="#3a3026" stroke-width="2"/>`;
+  s+=`<polygon points="${CX},${CY-r0+6} ${CX-7},${CY-6} ${CX+7},${CY-6}" fill="#6fc7e0"/>`;     // стрелка на С
+  s+=`<text x="${CX}" y="${CY+4}" text-anchor="middle" font-size="11" fill="#9a8c72">тень</text>`;
+  s+=`<text class="sun" x="${CX}" y="${CY+R-2}" text-anchor="middle">☀️</text>`;                 // солнце у юга
+  s+=`<line id="qibla" class="qibla" x1="${CX}" y1="${CY}" x2="${pol(135,R-12)[0].toFixed(1)}" y2="${pol(135,R-12)[1].toFixed(1)}"/>`;
+  svg.innerHTML=s;
+  DIRS.forEach(d=>{
+    const el=svg.querySelector(`.wedge[data-id="${d.id}"]`);
+    el.addEventListener('click',()=>pick(d,el));
+  });
+}
+
+function pick(d, el){
+  if(done) return;
+  if(d.correct){ done=true; win(false, el); return; }
+  attempts++; erosion+=EROS[Math.min(attempts-1,2)]; setEros();
+  el.classList.add('shake'); setTimeout(()=>el.classList.remove('shake'),420);
+  if(attempts>=2) $('showAns').disabled=false;
+  toast(attempts===1 ? 'Не та сторона. Север сверху — отсчитай к юго-западу (вниз и влево).'
+                     : 'Юго-запад — между Югом (солнце) и Западом. Нижний левый сектор.');
+}
+
+function win(viaReveal, el){
+  const sw=document.querySelector('.wedge[data-id="SW"]');
+  if(sw) sw.classList.add('ok');
+  $('qibla').classList.add('show');
+  $('rule').innerHTML='Кибла найдена: <b>юго-запад</b> — туда глядит михраб.';
+  const r=$('result'); r.className='result show ok';
+  $('resText').textContent = viaReveal
+    ? 'Вот она — юго-запад. Туда обращён михраб, туда молится весь Чач. Теперь у тебя есть свой михраб: ты знаешь, где стоишь, даже без карты.'
+    : 'Верно. Юго-запад — кибла. Ты нашёл дорогу не по стрелке в кармане, а по солнцу и тени, как странники тысячу лет. Теперь ты не заплутаешь в этом городе.';
+  $('resKey').textContent = viaReveal ? '🔑 Ключ получен: Живой след (со стиранием)' : '🔑 Ключ получен: Живой след';
+  setTimeout(()=>r.scrollIntoView({behavior:'smooth',block:'center'}),250);
+  sendResult(viaReveal);
+}
+$('showAns').onclick=()=>{ if(!done){done=true; win(true);} };
+
+function sendResult(viaReveal){
+  const payload={app:'roza', solved:true, via_reveal:viaReveal, hints:attempts,
+                 task:'wanderer_qibla', erosion:erosion, key:'living_trace'};
+  const tg=window.Telegram&&window.Telegram.WebApp;
+  if(tg&&tg.sendData){ try{ tg.sendData(JSON.stringify(payload)); setTimeout(()=>tg.close(),900);}catch(e){ toast('Отправлено боту (эмуляция)'); } }
+  else { toast('Результат боту: '+JSON.stringify(payload)); console.log('sendData ->',payload); }
+}
+
+const tg=window.Telegram&&window.Telegram.WebApp; if(tg){tg.ready(); tg.expand();}
+build(); setEros();
+</script>
+</body>
+</html>
