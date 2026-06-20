@@ -1,0 +1,180 @@
+<!-- Хранители Чача · мини-апп «Горячо/Холодно» (Чутьё Странника)
+     GPS + вибрация (Telegram HapticFeedback) + термометр.
+     Открывается ботом как web_app. Цель и параметры — через ссылку:
+       hotcold.html?lat=41.3&lng=69.2&arrive=15&cold=60&name=знак&seg=p1b07_wanderer_01
+     ?test=1 — режим проверки без GPS (ползунок имитирует расстояние).
+     Возвращает боту: sendData({found:true, seg, dist}). -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Чутьё странника</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{ --bg:#14131f; --ink:#ece6d8; --muted:#9a93a8; --gold:#f0c463; --line:#3a374e; --hot:#e0533a; }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{ margin:0; font-family:-apple-system,system-ui,"Segoe UI",Roboto,sans-serif; color:var(--ink);
+    background:radial-gradient(900px 500px at 50% -10%,#20203a 0,transparent 60%),linear-gradient(180deg,#14131f,#100f18);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; padding:22px; text-align:center; overflow:hidden}
+  h1{font-size:14px; letter-spacing:.28em; text-transform:uppercase; color:var(--gold); font-weight:700; margin:0 0 4px}
+  .sub{color:var(--muted); font-size:13px; margin:0 0 20px}
+  /* термометр-шар */
+  .orb{ position:relative; width:190px; height:190px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 40%, #2a2740, #1a1828); border:1px solid var(--line);
+    box-shadow:0 0 0 0 rgba(224,83,58,0); transition:box-shadow .15s }
+  .orb .glow{ position:absolute; inset:-2px; border-radius:50%; opacity:.0; }
+  .orb.pulsing .glow{ animation:pulse var(--pulse,1600ms) ease-in-out infinite }
+  @keyframes pulse{ 0%,100%{opacity:.15; transform:scale(.96)} 50%{opacity:.85; transform:scale(1.04)} }
+  .label{ font-size:30px; font-weight:800; letter-spacing:.04em; z-index:2 }
+  .dist{ color:var(--muted); font-size:12px; margin-top:14px; min-height:16px }
+  .hint{ color:var(--muted); font-size:13px; margin-top:6px; max-width:300px; line-height:1.45 }
+  .btn{ margin-top:22px; border:none; border-radius:14px; padding:14px 22px; font-size:16px; font-weight:700;
+    background:var(--gold); color:#1a1410; cursor:pointer }
+  .btn.ghost{ background:transparent; color:var(--muted); border:1px dashed var(--line); font-weight:600 }
+  .hidden{ display:none !important }
+  #sim{ width:280px; margin-top:18px }
+  .ok{ color:#a9d39b }
+</style>
+</head>
+<body>
+  <h1>Чутьё странника</h1>
+  <p class="sub" id="sub">Иди на тепло — оно подаёт голос</p>
+
+  <div class="orb" id="orb"><div class="glow" id="glow"></div><div class="label" id="label">…</div></div>
+  <div class="dist" id="dist"></div>
+  <p class="hint" id="hint">Двигайся: чем ближе к скрытому, тем теплее и чаще пульс.</p>
+
+  <!-- режим проверки без GPS -->
+  <input type="range" id="sim" class="hidden" min="0" max="80" value="80">
+
+  <!-- найдено -->
+  <button class="btn hidden" id="foundBtn">✅ Я нашёл знак</button>
+  <!-- честный засчёт, если GPS недоступен -->
+  <button class="btn ghost hidden" id="honorBtn">GPS не ловит — я на месте</button>
+  <!-- ручной вход в тест без GPS -->
+  <button class="btn ghost hidden" id="testBtn">🧪 Тест без GPS</button>
+
+<script>
+(function(){
+  const tg = window.Telegram && window.Telegram.WebApp;
+  try{ tg && tg.ready(); tg && tg.expand(); }catch(e){}
+
+  // ---- параметры (URL переопределяет дефолты) ----
+  const p = new URLSearchParams(location.search);
+  const CFG = {
+    lat:    parseFloat(p.get('lat'))    || 41.3265,
+    lng:    parseFloat(p.get('lng'))    || 69.2360,
+    arrive: parseFloat(p.get('arrive')) || 15,   // радиус «нашёл», м (GPS-приоритет)
+    cold:   parseFloat(p.get('cold'))   || 60,   // дальше — «холодно», м
+    name:   p.get('name') || 'знак',
+    seg:    p.get('seg')  || 'p1b07_wanderer_01',
+    test:   p.get('test') === '1'
+  };
+  document.getElementById('sub').textContent = 'Ищем: ' + CFG.name;
+
+  const orb=document.getElementById('orb'), glow=document.getElementById('glow'),
+        label=document.getElementById('label'), distEl=document.getElementById('dist'),
+        hint=document.getElementById('hint'), foundBtn=document.getElementById('foundBtn'),
+        honorBtn=document.getElementById('honorBtn'), sim=document.getElementById('sim');
+
+  let arrived=false, pulseTimer=null, lastStyle='';
+
+  function haversine(lat1,lon1,lat2,lon2){
+    const R=6371000, t=x=>x*Math.PI/180;
+    const dla=t(lat2-lat1), dlo=t(lon2-lon1);
+    const a=Math.sin(dla/2)**2 + Math.cos(t(lat1))*Math.cos(t(lat2))*Math.sin(dlo/2)**2;
+    return 2*R*Math.asin(Math.sqrt(a));
+  }
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+  function buzz(style){ try{ tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(style); }catch(e){} }
+
+  function setPulse(intervalMs, style){
+    glow.style.setProperty('--pulse', intervalMs+'ms');
+    orb.classList.add('pulsing');
+    if(pulseTimer) clearInterval(pulseTimer);
+    pulseTimer = setInterval(()=>buzz(style), intervalMs);
+  }
+
+  // d — расстояние в метрах
+  function update(d){
+    if(arrived) return;
+    distEl.textContent = '≈ ' + Math.round(d) + ' м';
+    if(d <= CFG.arrive){ return found('gps'); }
+
+    const warmth = clamp01((CFG.cold - d) / (CFG.cold - CFG.arrive)); // 0 холодно … 1 горячо
+    const hue = Math.round(210 * (1 - warmth));            // 210 синий → 0 красный
+    const col = `hsl(${hue},85%,55%)`;
+    glow.style.background = `radial-gradient(circle at 50% 45%, ${col}, transparent 70%)`;
+    orb.style.boxShadow = `0 0 ${10+warmth*60}px ${warmth*8}px ${col}`;
+    label.style.color = col;
+
+    let txt='ХОЛОДНО';
+    if(warmth>0.85) txt='ГОРЯЧО!'; else if(warmth>0.6) txt='ТЕПЛО'; else if(warmth>0.35) txt='ТЕПЛЕЕ'; else if(warmth>0.12) txt='ПРОХЛАДНО';
+    label.textContent = txt;
+
+    const interval = Math.round(1800 - warmth*(1800-320)); // пульс чаще к цели
+    const style = warmth>0.75 ? 'heavy' : warmth>0.4 ? 'medium' : 'light';
+    if(style!==lastStyle || Math.abs(interval - (parseInt(glow.style.getPropertyValue('--pulse'))||0))>120){
+      setPulse(interval, style); lastStyle=style;
+    }
+  }
+
+  function found(how){
+    arrived=true;
+    if(pulseTimer) clearInterval(pulseTimer);
+    orb.classList.remove('pulsing');
+    glow.style.opacity='.9'; glow.style.background='radial-gradient(circle at 50% 45%, var(--hot), transparent 72%)';
+    orb.style.boxShadow='0 0 70px 10px var(--hot)';
+    label.textContent='ВОТ ОНО'; label.classList.add('ok'); label.style.color='';
+    hint.innerHTML='Ты у цели. Теперь <b>найди знак глазами</b> и сфотографируй его в боте.';
+    distEl.textContent=''; sim.classList.add('hidden'); honorBtn.classList.add('hidden');
+    foundBtn.classList.remove('hidden');
+    try{ tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('success'); }catch(e){}
+  }
+
+  foundBtn.addEventListener('click', ()=>{
+    const payload = JSON.stringify({ ok:true, found:true, seg:CFG.seg, how:'arrived' });
+    try{ if(tg && tg.sendData){ tg.sendData(payload); return; } }catch(e){}
+    // фолбэк вне Telegram
+    alert('Готово (вне Telegram): '+payload);
+  });
+  honorBtn.addEventListener('click', ()=> found('honor'));
+
+  // ---- запуск ----
+  const testBtn = document.getElementById('testBtn');
+  const inTelegram = !!(tg && tg.initData && tg.initData.length > 0);  // настоящий запуск из Telegram
+
+  function startSim(){
+    testBtn.classList.add('hidden'); honorBtn.classList.add('hidden');
+    sim.classList.remove('hidden');
+    hint.textContent='Тест-режим: двигай ползунок — это «расстояние до цели».';
+    update(parseFloat(sim.value));
+    sim.oninput = ()=> update(parseFloat(sim.value));
+  }
+  function startGPS(){
+    testBtn.classList.remove('hidden');     // всегда оставить выход в тест
+    hint.textContent='Разреши доступ к геолокации и иди на тепло.';
+    navigator.geolocation.watchPosition(
+      pos=>{
+        const d = haversine(pos.coords.latitude,pos.coords.longitude, CFG.lat,CFG.lng);
+        if(pos.coords.accuracy>35) distEl.textContent='≈ '+Math.round(d)+' м · сигнал слабый';
+        update(d);
+      },
+      err=>{ hint.innerHTML='GPS недоступен. Если ты у места — кнопка ниже; или жми «Тест без GPS».';
+             label.textContent='—'; honorBtn.classList.remove('hidden'); },
+      { enableHighAccuracy:true, maximumAge:1000, timeout:20000 }
+    );
+  }
+  testBtn.addEventListener('click', startSim);
+
+  // вне Telegram (открыто в браузере) ИЛИ ?test=1 ИЛИ нет геолокации → сразу ползунок.
+  // Внутри Telegram с GPS → ведём по GPS (+ кнопка «Тест без GPS» на всякий случай).
+  if(CFG.test || !inTelegram || !('geolocation' in navigator)) startSim();
+  else startGPS();
+})();
+</script>
+</body>
+</html>
